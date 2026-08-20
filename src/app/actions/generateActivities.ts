@@ -1,86 +1,77 @@
 "use server";
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
+import { generateText, Output } from "ai";
+import { z } from "zod";
+import { resolveTextModel } from "@/lib/ai/runtime";
+import type { TextAgentId } from "@/lib/ai/catalog";
 
 export interface GeneratedVocabulary {
-    english: string;
-    category: string;
-    emoji: string;
+  english: string;
+  category: string;
+  emoji: string;
 }
 
 export interface GeneratedGridPrompt {
-    text: string;
-    type: 'positive' | 'negative' | 'question';
+  text: string;
+  type: "positive" | "negative" | "question";
 }
 
 export interface GeneratedActivityPack {
-    topic: string;
-    level: string;
-    vocabulary: GeneratedVocabulary[];
-    gridPrompts: GeneratedGridPrompt[];
+  topic: string;
+  level: string;
+  vocabulary: GeneratedVocabulary[];
+  gridPrompts: GeneratedGridPrompt[];
 }
 
-export async function generateActivities(topic: string, level: string = "A1-A2"): Promise<GeneratedActivityPack> {
-    try {
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+const activityPackSchema = z.object({
+  vocabulary: z
+    .array(
+      z.object({
+        english: z.string().min(1),
+        category: z.string().min(1),
+        emoji: z.string().min(1),
+      }),
+    )
+    .length(48),
+  gridPrompts: z
+    .array(
+      z.object({
+        text: z.string().min(1),
+        type: z.enum(["positive", "negative", "question"]),
+      }),
+    )
+    .length(36),
+});
 
-        const prompt = `You are an ESL vocabulary generator. Generate vocabulary for ESL classroom activities.
+export async function generateActivities(
+  topic: string,
+  level: string = "A1-A2",
+  requestedAgent?: TextAgentId,
+): Promise<GeneratedActivityPack> {
+  const normalizedTopic = topic.trim();
+  if (!normalizedTopic) throw new Error("Enter a topic before generating activities.");
 
-TOPIC: "${topic}"
-LEVEL: ${level} (CECRL)
+  const { model } = await resolveTextModel(requestedAgent);
+  const { output } = await generateText({
+    model,
+    reasoning: "medium",
+    output: Output.object({ schema: activityPackSchema }),
+    instructions:
+      "You create accurate, age-appropriate ESL classroom material for French secondary-school teachers.",
+    prompt: `Create an activity pack about "${normalizedTopic}" for CECRL level ${level}.
 
-Generate a JSON response with EXACTLY this structure:
-{
-  "vocabulary": [
-    {"english": "word", "category": "Category Name", "emoji": "🎯"}
-  ],
-  "gridPrompts": [
-    {"text": "action phrase", "type": "positive|negative|question"}
-  ]
-}
+Requirements:
+- Exactly 48 vocabulary items divided into four distinct categories of 12.
+- Every vocabulary item has a suitable emoji.
+- Exactly 36 short grid prompts of two to four words.
+- Grid prompts contain exactly 12 positive, 12 negative, and 12 question items.
+- Avoid duplicate vocabulary and keep every item appropriate for ${level}.`,
+  });
 
-RULES:
-1. Generate exactly 48 vocabulary items
-2. Split vocabulary into 4 distinct categories related to "${topic}" (12 items each)
-3. Each word MUST have an appropriate emoji
-4. Generate exactly 36 grid prompts for the Roll-a-Sentence game
-5. Grid prompts should be short phrases/verbs (2-4 words) related to ${topic}
-6. Evenly distribute grid prompt types: 12 positive, 12 negative, 12 question
-7. Keep vocabulary appropriate for ${level} level
-8. Return ONLY valid JSON, no markdown code blocks
-
-Example for "Weather":
-{
-  "vocabulary": [
-    {"english": "sunny", "category": "Weather Types", "emoji": "☀️"},
-    {"english": "umbrella", "category": "Weather Items", "emoji": "☂️"}
-  ],
-  "gridPrompts": [
-    {"text": "go outside", "type": "positive"},
-    {"text": "stay home", "type": "negative"},
-    {"text": "rainy today", "type": "question"}
-  ]
-}`;
-
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        let text = response.text();
-
-        // Clean up response - remove markdown code blocks if present
-        text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-        const data = JSON.parse(text);
-
-        return {
-            topic,
-            level,
-            vocabulary: data.vocabulary || [],
-            gridPrompts: data.gridPrompts || [],
-        };
-    } catch (error) {
-        console.error("Activity Generation Error:", error);
-        throw new Error("Failed to generate activities");
-    }
+  return {
+    topic: normalizedTopic,
+    level,
+    vocabulary: output.vocabulary,
+    gridPrompts: output.gridPrompts,
+  };
 }

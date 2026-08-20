@@ -1,77 +1,59 @@
 "use server";
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
+import { generateText, Output } from "ai";
+import { z } from "zod";
+import { resolveTextModel } from "@/lib/ai/runtime";
+import type { TextAgentId } from "@/lib/ai/catalog";
 
 export interface LevelAdjustmentResult {
-    adjustedText: string;
-    originalLevel: string;
-    targetLevel: string;
-    wordCount: { original: number; adjusted: number };
-    complexity: string;
+  adjustedText: string;
+  originalLevel: string;
+  targetLevel: string;
+  wordCount: { original: number; adjusted: number };
+  complexity: string;
 }
+
+const adjustmentSchema = z.object({
+  adjustedText: z.string().min(1),
+  originalLevel: z.enum(["A1", "A2", "B1", "B2", "Unknown"]),
+  complexity: z.string().min(1),
+});
+
+const CECRL_LEVELS = new Set(["A1", "A2", "B1", "B2"]);
 
 export async function adjustLevel(
-    text: string,
-    targetLevel: string
+  text: string,
+  targetLevel: string,
+  requestedAgent?: TextAgentId,
 ): Promise<LevelAdjustmentResult> {
-    try {
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  if (!text.trim()) throw new Error("Select text before adjusting its level.");
+  if (!CECRL_LEVELS.has(targetLevel)) throw new Error("Unsupported CECRL target level.");
 
-        const prompt = `You are an expert ESL text adapter. Rewrite the following text to match CECRL level ${targetLevel}.
+  const { model } = await resolveTextModel(requestedAgent);
+  const { output } = await generateText({
+    model,
+    reasoning: "medium",
+    output: Output.object({ schema: adjustmentSchema }),
+    instructions:
+      "You are an expert ESL text adapter for French secondary-school teachers. Preserve meaning and return pedagogically usable English.",
+    prompt: `Rewrite the text for CECRL level ${targetLevel}.
 
-ORIGINAL TEXT:
-"""
-${text}
-"""
+Level guidance:
+- A1: very simple sentences, high-frequency vocabulary, mostly present tense.
+- A2: simple connected sentences, everyday vocabulary, present and past.
+- B1: connected discourse, broader vocabulary, standard basic tenses.
+- B2: complex sentences, abstract vocabulary, conditional and nuanced expression.
 
-TARGET LEVEL: ${targetLevel}
+Original text:
+${text}`,
+  });
 
-LEVEL GUIDELINES:
-- A1: Very simple sentences, basic vocabulary (50-100 common words), present tense only
-- A2: Simple sentences, everyday vocabulary, present and past tenses
-- B1: Connected sentences, broader vocabulary, all basic tenses
-- B2: Complex sentences, abstract vocabulary, subjunctive and conditional
-
-RULES:
-1. Preserve the MEANING of the original text
-2. Adjust vocabulary complexity to match ${targetLevel}
-3. Adjust sentence structure to match ${targetLevel}
-4. Keep the same topic and key information
-5. For A1/A2: Use shorter sentences, simpler words
-6. For B1/B2: Can use longer sentences, more sophisticated vocabulary
-
-Return a JSON object with:
-{
-  "adjustedText": "the rewritten text",
-  "originalLevel": "estimated original CECRL level (A1/A2/B1/B2)",
-  "complexity": "brief description of changes made"
-}
-
-Return ONLY valid JSON, no markdown.`;
-
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        let responseText = response.text();
-
-        // Clean up response
-        responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-        const data = JSON.parse(responseText);
-
-        return {
-            adjustedText: data.adjustedText || text,
-            originalLevel: data.originalLevel || 'Unknown',
-            targetLevel,
-            wordCount: {
-                original: text.split(/\s+/).length,
-                adjusted: (data.adjustedText || text).split(/\s+/).length,
-            },
-            complexity: data.complexity || 'Text adjusted',
-        };
-    } catch (error) {
-        console.error("Level Adjustment Error:", error);
-        throw new Error("Failed to adjust text level");
-    }
+  return {
+    ...output,
+    targetLevel,
+    wordCount: {
+      original: text.trim().split(/\s+/).length,
+      adjusted: output.adjustedText.trim().split(/\s+/).length,
+    },
+  };
 }

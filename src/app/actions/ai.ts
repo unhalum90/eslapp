@@ -1,32 +1,34 @@
 "use server";
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { generateText as generateTextWithModel } from "ai";
+import { resolveTextModel } from "@/lib/ai/runtime";
+import type { TextAgentId } from "@/lib/ai/catalog";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
+const ESL_ARCHITECT_INSTRUCTIONS = `You are The ESL Architect, an AI assistant for French ESL teachers.
 
-export async function generateText(prompt: string, context: string = "") {
-    try {
-        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+Output rules:
+1. Return only plain, classroom-ready text.
+2. Do not return JSON, code fences, internal reasoning, or meta-commentary.
+3. If asked for an image, describe the intended illustration in text.
+4. For document edits, return the complete modified text.
+5. Respect the supplied teacher context and do not invent student results.`;
 
-        const systemInstruction = `You are "The ESL Architect", an AI assistant that helps French ESL teachers create educational content.
+export async function generateText(
+  prompt: string,
+  context: string = "",
+  requestedAgent?: TextAgentId,
+) {
+  const { model } = await resolveTextModel(requestedAgent);
+  const request = context
+    ? `Existing text:\n${context}\n\nTeacher request:\n${prompt}`
+    : `Teacher request:\n${prompt}`;
 
-**OUTPUT RULES:**
-1. Return ONLY plain text content.
-2. DO NOT return JSON, code blocks, or structured data.
-3. DO NOT include "action", "thought", or any meta-commentary.
-4. If asked for an image, describe it in text (e.g., "[Image: Birthday cake illustration]").
-5. For document edits: return the complete modified text.
-6. For new content: return ready-to-use educational text.`;
+  const { text } = await generateTextWithModel({
+    model,
+    instructions: ESL_ARCHITECT_INSTRUCTIONS,
+    prompt: request,
+    reasoning: "medium",
+  });
 
-        const fullPrompt = context
-            ? `${systemInstruction}\n\nExisting Text:\n${context}\n\nUser Request: ${prompt}\n\nReturn only the plain text result:`
-            : `${systemInstruction}\n\nUser Request: ${prompt}\n\nReturn only the plain text result:`;
-
-        const result = await model.generateContent(fullPrompt);
-        const response = await result.response;
-        return response.text();
-    } catch (error) {
-        console.error("AI Generation Error:", error);
-        throw new Error("Failed to generate content");
-    }
+  return text.trim();
 }

@@ -16,6 +16,10 @@ export default function EditorPage() {
     const handleSave = async () => {
         setIsSaving(true);
         try {
+            if (!supabase) {
+                alert("Supabase is not configured. The canvas remains available in demo mode.");
+                return;
+            }
             const { data: { user } } = await supabase.auth.getUser();
             const userId = user?.id;
 

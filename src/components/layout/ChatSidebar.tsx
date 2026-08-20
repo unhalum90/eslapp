@@ -6,6 +6,7 @@ import { generateText } from "@/app/actions/ai";
 import { generateImage } from "@/app/actions/image";
 import { adjustLevel, LevelAdjustmentResult } from "@/app/actions/adjustLevel";
 import { useEditorStore } from "@/lib/store/useEditorStore";
+import { useAiAgentStore } from "@/lib/store/useAiAgentStore";
 
 type Mode = "edit" | "text" | "image" | "level";
 
@@ -19,6 +20,7 @@ export function ChatSidebar() {
     const [targetLevel, setTargetLevel] = useState("A2");
     const [levelResult, setLevelResult] = useState<LevelAdjustmentResult | null>(null);
     const { selectedObject } = useEditorStore();
+    const selectedAgent = useAiAgentStore((state) => state.selectedAgent);
 
     const handleSend = async () => {
         if (!input.trim() || isLoading) return;
@@ -30,7 +32,7 @@ export function ChatSidebar() {
 
         try {
             if (mode === "edit" && selectedObject) {
-                const response = await generateText(userMessage, selectedObject.content);
+                const response = await generateText(userMessage, selectedObject.content, selectedAgent);
                 if ((window as any).canvasEditor) {
                     (window as any).canvasEditor.updateSelectedText(response);
                     setMessages(prev => [...prev, { role: 'assistant', content: "✅ Text updated." }]);
@@ -47,7 +49,7 @@ export function ChatSidebar() {
                     });
                 }
             } else {
-                const response = await generateText(userMessage, "");
+                const response = await generateText(userMessage, "", selectedAgent);
                 if ((window as any).canvasEditor) {
                     (window as any).canvasEditor.addGeneratedText(response);
                     setMessages(prev => [...prev, { role: 'assistant', content: "✅ New text box created." }]);
@@ -67,7 +69,7 @@ export function ChatSidebar() {
         setLevelResult(null);
 
         try {
-            const result = await adjustLevel(selectedObject.content, targetLevel);
+            const result = await adjustLevel(selectedObject.content, targetLevel, selectedAgent);
             setLevelResult(result);
 
             // Automatically update the canvas

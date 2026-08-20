@@ -2,14 +2,20 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useEditorStore } from "@/lib/store/useEditorStore";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+interface RecentDocument {
+    id: string;
+    title: string;
+    updated_at: string;
+}
+
 export function DocumentList() {
-    const [documents, setDocuments] = useState<any[]>([]);
+    const [documents, setDocuments] = useState<RecentDocument[]>([]);
     const { setContent, setHeading } = useEditorStore();
     const router = useRouter();
-    const supabase = createClient();
+    const supabase = useMemo(() => createClient(), []);
 
     useEffect(() => {
         // In a real app we'd fetch for the current user.
@@ -17,6 +23,7 @@ export function DocumentList() {
         // we'll assume the user is authenticated or policies accept anon for demo purposes if modified.
         // For now, let's just fetch everything.
         const fetchDocs = async () => {
+            if (!supabase) return;
             const { data } = await supabase.from('documents').select('id, title, updated_at').order('updated_at', { ascending: false }).limit(5);
             if (data) setDocuments(data);
         };
@@ -24,9 +31,10 @@ export function DocumentList() {
         fetchDocs();
 
         // Subscribe to realtime changes? Would be nice.
-    }, []);
+    }, [supabase]);
 
     const loadDoc = async (id: string) => {
+        if (!supabase) return;
         const { data } = await supabase.from('documents').select('*').eq('id', id).single();
         if (data) {
             setContent(data.content || '');

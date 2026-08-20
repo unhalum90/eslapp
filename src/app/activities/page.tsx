@@ -10,6 +10,7 @@ import { SupplementaryActivity } from '@/components/activities/SupplementaryActi
 import { generateActivities, GeneratedActivityPack } from '@/app/actions/generateActivities';
 import { Sparkles, Loader2, Download, RefreshCw } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import { useAiAgentStore } from '@/lib/store/useAiAgentStore';
 
 const TABS = [
     { label: 'Overview', icon: '📋' },
@@ -30,6 +31,7 @@ export default function ActivitiesPage() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedPack, setGeneratedPack] = useState<GeneratedActivityPack | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const selectedAgent = useAiAgentStore((state) => state.selectedAgent);
 
     const handleGenerate = async () => {
         if (!topic.trim()) return;
@@ -37,7 +39,7 @@ export default function ActivitiesPage() {
         setError(null);
 
         try {
-            const pack = await generateActivities(topic, level);
+            const pack = await generateActivities(topic, level, selectedAgent);
             setGeneratedPack(pack);
             setActiveTab(1); // Jump to first activity
         } catch (err) {

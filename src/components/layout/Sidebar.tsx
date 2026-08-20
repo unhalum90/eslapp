@@ -1,14 +1,15 @@
 import Link from "next/link";
-import { FileText, Layout, Settings, Upload, Library, Gamepad2 } from "lucide-react";
+import { FileText, Layout, Upload, Gamepad2, Scissors, BookOpenCheck, UserCircle } from "lucide-react";
 import { DocumentList } from "@/components/layout/DocumentList";
 
 const NAV_ITEMS = [
     { icon: Layout, label: "Dashboard", href: "/" },
+    { icon: BookOpenCheck, label: "Teacher Workspace", href: "/workspace" },
     { icon: Gamepad2, label: "Activity Builder", href: "/activities" },
-    { icon: Library, label: "My Library", href: "/library" },
+    { icon: FileText, label: "Resource Canvas", href: "/editor" },
     { icon: Upload, label: "Ingest PDF", href: "/ingest" },
-    { icon: FileText, label: "Templates", href: "/templates" },
-    { icon: Settings, label: "Settings", href: "/settings" },
+    { icon: Scissors, label: "Audio Trimmer", href: "/tools/audio" },
+    { icon: UserCircle, label: "Teacher Account", href: "/account" },
 ];
 
 export function Sidebar() {

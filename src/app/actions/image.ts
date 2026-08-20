@@ -1,32 +1,48 @@
 "use server";
 
 import { GoogleGenAI } from "@google/genai";
+import { requireAiIdentity } from "@/lib/ai/authorization";
+import { IMAGE_AGENT } from "@/lib/ai/catalog";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || "" });
+interface GoogleImagePart {
+  type?: string;
+  data?: string;
+  mime_type?: string;
+}
 
 export async function generateImage(prompt: string): Promise<string> {
-    try {
-        // Use Imagen 4 for image generation (available in v1beta)
-        const response = await ai.models.generateImages({
-            model: "imagen-4.0-generate-001",
-            prompt: `Educational illustration for ESL classroom: ${prompt}. Clean, colorful clipart style suitable for printing.`,
-            config: {
-                numberOfImages: 1,
-                outputMimeType: "image/png",
-            },
-        });
+  await requireAiIdentity();
+  const apiKey = process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GOOGLE_API_KEY is not configured for Nano Banana 2.");
+  }
+  if (!prompt.trim()) throw new Error("Describe an image before generating it.");
 
-        // Get the generated image as base64
-        if (response.generatedImages && response.generatedImages.length > 0) {
-            const imageData = response.generatedImages[0].image?.imageBytes;
-            if (imageData) {
-                return `data:image/png;base64,${imageData}`;
-            }
-        }
+  const ai = new GoogleGenAI({ apiKey });
+  const interaction = await ai.interactions.create({
+    model: IMAGE_AGENT.model,
+    input: `Create a clean educational illustration for an ESL classroom worksheet. ${prompt.trim()} High contrast, uncluttered composition, suitable for screen and A4 printing.`,
+    response_modalities: ["image"],
+    response_format: {
+      type: "image",
+      aspect_ratio: "1:1",
+      image_size: "1K",
+    },
+  });
 
-        throw new Error("No image generated");
-    } catch (error) {
-        console.error("Image Generation Error:", error);
-        throw new Error("Failed to generate image");
+  const directImage = interaction.outputs?.find(
+    (output) => output.type === "image",
+  ) as GoogleImagePart | undefined;
+  const steppedImage = (
+    interaction as typeof interaction & {
+      steps?: Array<{ content?: GoogleImagePart[] }>;
     }
+  ).steps
+    ?.flatMap((step) => step.content ?? [])
+    .find((output) => output.type === "image");
+  const image = directImage ?? steppedImage;
+
+  if (!image?.data) throw new Error("Nano Banana 2 returned no image.");
+
+  return `data:${image.mime_type ?? "image/png"};base64,${image.data}`;
 }
