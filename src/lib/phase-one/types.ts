@@ -1,4 +1,64 @@
 export type LevelCode = "6e" | "5e" | "4e" | "3e" | "SEGPA";
+export type CefrLevel = "A1" | "A1+" | "A2" | "A2+" | "B1" | "B1+" | "B2";
+
+export type DocumentRole =
+  | "sequence_plan"
+  | "teacher_guide"
+  | "student_sheet"
+  | "support_sheet"
+  | "vocabulary_cards"
+  | "activity"
+  | "assessment"
+  | "correction"
+  | "rubric"
+  | "self_assessment"
+  | "final_task";
+
+export type DocumentAdaptation = "standard" | "pap";
+
+export interface PrintProfile {
+  paper: "A4" | "letter";
+  orientation: "portrait" | "landscape";
+  targetPages: number;
+  copiesPerPage: 1 | 2 | 3 | 4 | 6;
+  colorMode: "monochrome" | "accent" | "color";
+  template: "classic" | "themed";
+}
+
+export interface SequenceFrame {
+  sequenceOrder: number | null;
+  period: string;
+  culturalAxis: string;
+  problematic: string;
+  notions: string[];
+  cefrEntry: CefrLevel | null;
+  cefrTarget: CefrLevel | null;
+  communicativeGoals: string[];
+  lexicalFields: string[];
+  phonologyPoints: string[];
+  reactivatedGrammarPoints: string[];
+}
+
+export interface SequencePackPreferences {
+  includeTeacherGuides: boolean;
+  includeStudentSheets: boolean;
+  includePap: boolean;
+  includeAssessment: boolean;
+  includeCorrection: boolean;
+  includeRubric: boolean;
+  printTemplate: "classic" | "themed";
+}
+
+export interface NewUnitInput {
+  title: string;
+  level: LevelCode;
+  schoolYear: string;
+  theme?: string;
+  finalTask?: FinalTask;
+  sequenceFrame?: Partial<SequenceFrame>;
+  sessionCount?: number;
+  packPreferences?: Partial<SequencePackPreferences>;
+}
 
 export type UnitStatus = "draft" | "ready" | "archived";
 export type ClassUnitStatus = "not_started" | "in_progress" | "complete";
@@ -28,6 +88,37 @@ export interface UnitSession {
   durationMinutes: number;
   reactivationTargetPercentage: number;
   notes: string;
+  question?: string;
+  communicativeObjectives?: string[];
+  culturalObjectives?: string[];
+  grammarFocus?: string[];
+  vocabularyFocus?: string[];
+  phonologyFocus?: string[];
+  expectedProduction?: string;
+  traceEcrite?: string;
+  homework?: string;
+  differentiationNotes?: string[];
+  assessmentNotes?: string;
+}
+
+export interface UnitMaterial {
+  id: string;
+  kind: "worksheet" | "activity";
+  title: string;
+  purpose: string;
+  instructions: string;
+  studentContent: string;
+  teacherNotes: string;
+  imageUrls: string[];
+  role?: DocumentRole;
+  adaptation?: DocumentAdaptation;
+  sessionId?: string;
+  familyId?: string;
+  sortOrder?: number;
+  printProfile?: PrintProfile;
+  sharedTaskIds?: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UnitDecision {
@@ -77,6 +168,9 @@ export interface FinalTask {
   performanceType: string;
   brief: string;
   successCriteria: string[];
+  standardExpectation?: string;
+  papExpectation?: string;
+  alternativeMode?: string;
 }
 
 export interface UnitContent {
@@ -89,8 +183,11 @@ export interface UnitContent {
   level: LevelCode;
   schoolYear: string;
   status: UnitStatus;
+  sequenceFrame?: SequenceFrame;
+  packPreferences?: SequencePackPreferences;
   finalTask: FinalTask;
   sessions: UnitSession[];
+  materials: UnitMaterial[];
   vocabulary: UnitVocabularyLink[];
   grammarPoints: string[];
   sourceReferences: SourceReference[];

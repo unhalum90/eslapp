@@ -3,12 +3,16 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
+  applyAgentProposalToUnit,
   calculateProgress,
   cloneUnit,
   createDistributionCode,
   createId,
   createRevision,
+  deleteUnitFromPhaseOne,
   MAX_UNIT_SESSIONS,
+  mergeAgentVocabulary,
+  mergeAgentMaterials,
 } from "@/lib/phase-one/domain";
 import { phaseOneSeed } from "@/lib/phase-one/seed";
 import type {
@@ -16,7 +20,7 @@ import type {
   CurriculumReference,
   DecisionKind,
   FinalTask,
-  LevelCode,
+  NewUnitInput,
   PhaseOneData,
   SourceReference,
   TeacherClass,
@@ -25,6 +29,14 @@ import type {
   UnitSession,
   VocabularyItem,
 } from "@/lib/phase-one/types";
+import {
+  resolvePackPreferences,
+  resolveSequenceFrame,
+} from "@/lib/teacher-pack/profile";
+import type {
+  GeneratedUnitAgentProposal,
+  UnitAgentSection,
+} from "@/lib/unit-agent/types";
 
 interface PhaseOneActions {
   selectedUnitId: string;
@@ -32,11 +44,18 @@ interface PhaseOneActions {
   selectUnit: (unitId: string) => void;
   selectClass: (classId: string) => void;
   createClass: (input: Omit<TeacherClass, "id">) => string;
-  createUnit: (input: { title: string; level: LevelCode; schoolYear: string }) => string;
+  createUnit: (input: NewUnitInput) => string;
+  deleteUnit: (unitId: string) => void;
   updateUnit: (unitId: string, patch: Partial<UnitContent>, revisionLabel?: string) => void;
   updateFinalTask: (unitId: string, patch: Partial<FinalTask>) => void;
   addSession: (unitId: string) => void;
   updateSession: (unitId: string, sessionId: string, patch: Partial<UnitSession>) => void;
+  applyUnitAgentProposal: (
+    unitId: string,
+    proposal: GeneratedUnitAgentProposal,
+    sections: UnitAgentSection[],
+    generatedImages?: Record<string, string>,
+  ) => void;
   addDecision: (unitId: string, kind: DecisionKind, text: string) => void;
   updateDecision: (unitId: string, decisionId: string, patch: Partial<UnitDecision>) => void;
   addSource: (unitId: string, source: Omit<SourceReference, "id">) => void;
@@ -77,24 +96,46 @@ function now(): string {
   return new Date().toISOString();
 }
 
-function freshUnit(input: { title: string; level: LevelCode; schoolYear: string }): UnitContent {
+function freshUnit(input: NewUnitInput): UnitContent {
   const id = createId("unit");
   const timestamp = now();
+  const sessionCount = Math.min(MAX_UNIT_SESSIONS, Math.max(0, input.sessionCount ?? 0));
   return {
     id,
     lineageRootId: id,
     title: input.title,
-    theme: "",
+    theme: input.theme?.trim() ?? "",
     level: input.level,
     schoolYear: input.schoolYear,
     status: "draft",
-    finalTask: {
+    sequenceFrame: resolveSequenceFrame(input.sequenceFrame),
+    packPreferences: resolvePackPreferences(input.packPreferences),
+    finalTask: input.finalTask ?? {
       title: "",
       performanceType: "",
       brief: "",
       successCriteria: [],
     },
-    sessions: [],
+    sessions: Array.from({ length: sessionCount }, (_, index) => ({
+      id: createId("session"),
+      title: `Séance ${index + 1}`,
+      objective: "",
+      durationMinutes: 55,
+      reactivationTargetPercentage: index === 0 ? 10 : 20,
+      notes: "",
+      question: "",
+      communicativeObjectives: [],
+      culturalObjectives: [],
+      grammarFocus: [],
+      vocabularyFocus: [],
+      phonologyFocus: [],
+      expectedProduction: "",
+      traceEcrite: "",
+      homework: "",
+      differentiationNotes: [],
+      assessmentNotes: "",
+    })),
+    materials: [],
     vocabulary: [],
     grammarPoints: [],
     sourceReferences: [],
@@ -132,6 +173,39 @@ export const usePhaseOneStore = create<PhaseOneStore>()(
         return unit.id;
       },
 
+      deleteUnit: (unitId) =>
+        set((state) => {
+          const next = deleteUnitFromPhaseOne(state, unitId, now());
+          if (next === state) return state;
+          if (state.selectedUnitId !== unitId) return next;
+
+          const selectedClass = state.classes.find(
+            (teacherClass) => teacherClass.id === state.selectedClassId,
+          );
+          const classForkedParentIds = selectedClass
+            ? new Set(
+                next.units
+                  .filter(
+                    (unit) =>
+                      unit.forkedForClassId === selectedClass.id && unit.parentUnitId,
+                  )
+                  .map((unit) => unit.parentUnitId as string),
+              )
+            : new Set<string>();
+          const nextSelectedUnit = selectedClass
+            ? next.units.find(
+                (unit) =>
+                  unit.level === selectedClass.level &&
+                  unit.schoolYear === selectedClass.schoolYear &&
+                  (unit.forkedForClassId
+                    ? unit.forkedForClassId === selectedClass.id
+                    : !classForkedParentIds.has(unit.id)),
+              )
+            : next.units[0];
+
+          return { ...next, selectedUnitId: nextSelectedUnit?.id ?? next.units[0]?.id ?? "" };
+        }),
+
       updateUnit: (unitId, patch, revisionLabel = "Before unit edit") =>
         set((state) => {
           const current = state.units.find((unit) => unit.id === unitId);
@@ -168,11 +242,22 @@ export const usePhaseOneStore = create<PhaseOneStore>()(
             if (unit.id !== unitId || unit.sessions.length >= MAX_UNIT_SESSIONS) return unit;
             const session: UnitSession = {
               id: createId("session"),
-              title: `Session ${unit.sessions.length + 1}`,
+              title: `Séance ${unit.sessions.length + 1}`,
               objective: "",
               durationMinutes: 55,
               reactivationTargetPercentage: 20,
               notes: "",
+              question: "",
+              communicativeObjectives: [],
+              culturalObjectives: [],
+              grammarFocus: [],
+              vocabularyFocus: [],
+              phonologyFocus: [],
+              expectedProduction: "",
+              traceEcrite: "",
+              homework: "",
+              differentiationNotes: [],
+              assessmentNotes: "",
             };
             return { ...unit, sessions: [...unit.sessions, session], updatedAt: now() };
           }),
@@ -192,6 +277,70 @@ export const usePhaseOneStore = create<PhaseOneStore>()(
               : unit,
           ),
         })),
+
+      applyUnitAgentProposal: (unitId, proposal, sections, generatedImages = {}) =>
+        set((state) => {
+          const current = state.units.find((unit) => unit.id === unitId);
+          if (!current || sections.length === 0) return state;
+
+          const timestamp = now();
+          const patch = proposal.patch;
+          let next = applyAgentProposalToUnit(current, proposal, sections, timestamp);
+          let vocabulary = state.vocabulary;
+          if (
+            sections.includes("vocabularyItems") &&
+            Array.isArray(proposal.patch.vocabularyItems)
+          ) {
+            const merged = mergeAgentVocabulary(
+              next,
+              state.vocabulary,
+              proposal.patch.vocabularyItems,
+              Object.fromEntries(
+                proposal.patch.vocabularyItems.map((_, index) => [
+                  index,
+                  generatedImages[`vocabulary:${index}`] ?? "",
+                ]),
+              ),
+              timestamp,
+            );
+            next = merged.unit;
+            vocabulary = merged.vocabulary;
+          }
+          if (sections.includes("materials") && Array.isArray(proposal.patch.materials)) {
+            next = mergeAgentMaterials(
+              next,
+              proposal.patch.materials,
+              generatedImages,
+              timestamp,
+            );
+          }
+
+          const sessionsChanged = sections.includes("sessions") && patch.sessions !== null;
+          const classRuns = sessionsChanged
+            ? state.classRuns.map((run) => {
+                if (run.unitId !== unitId) return run;
+                const currentSession = Math.min(run.currentSession, next.sessions.length);
+                const progressPercent = calculateProgress(currentSession, next.sessions.length);
+                const status: ClassUnitRun["status"] =
+                  progressPercent === 0
+                    ? "not_started"
+                    : progressPercent === 100
+                      ? "complete"
+                      : "in_progress";
+                return { ...run, currentSession, progressPercent, status, updatedAt: timestamp };
+              })
+            : state.classRuns;
+
+          return {
+            units: state.units.map((unit) => (unit.id === unitId ? next : unit)),
+            vocabulary,
+            classRuns,
+            revisions: [
+              createRevision(current, `Before Unit Architect: ${proposal.title}`),
+              ...state.revisions,
+            ].slice(0, 150),
+          };
+        }),
 
       addDecision: (unitId, kind, text) =>
         set((state) => {

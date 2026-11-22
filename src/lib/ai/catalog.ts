@@ -1,4 +1,5 @@
 export type TextAgentId = "codex-terra" | "claude-opus";
+export type ImageAgentId = "gemini" | "openai";
 
 export interface TextAgentDefinition {
   id: TextAgentId;
@@ -28,11 +29,29 @@ export const TEXT_AGENTS: Record<TextAgentId, TextAgentDefinition> = {
 };
 
 export const IMAGE_AGENT = {
+  id: "gemini",
   label: "Nano Banana 2",
   provider: "Google",
   model: "gemini-3.1-flash-image",
   requiredEnvironmentVariable: "GOOGLE_API_KEY",
 } as const;
+
+export const OPENAI_IMAGE_AGENT = {
+  id: "openai",
+  label: "GPT Image 2",
+  provider: "OpenAI",
+  model: "gpt-image-2",
+  requiredEnvironmentVariable: "OPENAI_API_KEY",
+} as const;
+
+export const IMAGE_AGENTS = {
+  gemini: IMAGE_AGENT,
+  openai: OPENAI_IMAGE_AGENT,
+} as const;
+
+export function isImageAgentId(value: unknown): value is ImageAgentId {
+  return value === "gemini" || value === "openai";
+}
 
 export function isTextAgentId(value: unknown): value is TextAgentId {
   return value === "codex-terra" || value === "claude-opus";

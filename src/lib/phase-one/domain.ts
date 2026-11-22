@@ -6,6 +6,12 @@ import type {
   UnitRevision,
   VocabularyItem,
 } from "./types";
+import type {
+  GeneratedUnitAgentProposal,
+  UnitAgentMaterialDraft,
+  UnitAgentSection,
+  UnitAgentVocabularyDraft,
+} from "../unit-agent/types";
 
 export const MAX_UNIT_SESSIONS = 8;
 
@@ -25,6 +31,46 @@ export function cloneUnit(unit: UnitContent): UnitContent {
   return structuredClone(unit);
 }
 
+export function deleteUnitFromPhaseOne(
+  data: PhaseOneData,
+  unitId: string,
+  timestamp = new Date().toISOString(),
+): PhaseOneData {
+  if (!data.units.some((unit) => unit.id === unitId)) return data;
+
+  const byId = new Map(data.units.map((unit) => [unit.id, unit]));
+  const findDetachedRoot = (unit: UnitContent): string | null => {
+    let cursor = unit;
+    const visited = new Set<string>();
+    while (cursor.parentUnitId && !visited.has(cursor.id)) {
+      visited.add(cursor.id);
+      if (cursor.parentUnitId === unitId) return cursor.id;
+      const parent = byId.get(cursor.parentUnitId);
+      if (!parent) return null;
+      cursor = parent;
+    }
+    return null;
+  };
+
+  return {
+    ...data,
+    units: data.units
+      .filter((unit) => unit.id !== unitId)
+      .map((unit) => {
+        const detachedRootId = findDetachedRoot(unit);
+        if (!detachedRootId) return unit;
+        return {
+          ...unit,
+          parentUnitId: unit.parentUnitId === unitId ? undefined : unit.parentUnitId,
+          lineageRootId: detachedRootId,
+          updatedAt: timestamp,
+        };
+      }),
+    classRuns: data.classRuns.filter((run) => run.unitId !== unitId),
+    revisions: data.revisions.filter((revision) => revision.unitId !== unitId),
+  };
+}
+
 export function createRevision(unit: UnitContent, label: string): UnitRevision {
   return {
     id: createId("revision"),
@@ -33,6 +79,143 @@ export function createRevision(unit: UnitContent, label: string): UnitRevision {
     createdAt: new Date().toISOString(),
     snapshot: cloneUnit(unit),
   };
+}
+
+export function applyAgentProposalToUnit(
+  unit: UnitContent,
+  proposal: GeneratedUnitAgentProposal,
+  sections: UnitAgentSection[],
+  timestamp = new Date().toISOString(),
+): UnitContent {
+  const selected = new Set(sections);
+  const patch = proposal.patch;
+
+  return {
+    ...unit,
+    title:
+      selected.has("unitTitle") && patch.unitTitle !== null ? patch.unitTitle : unit.title,
+    theme: selected.has("theme") && patch.theme !== null ? patch.theme : unit.theme,
+    finalTask:
+      selected.has("finalTask") && patch.finalTask !== null
+        ? { ...patch.finalTask, successCriteria: [...patch.finalTask.successCriteria] }
+        : unit.finalTask,
+    grammarPoints:
+      selected.has("grammarPoints") && patch.grammarPoints !== null
+        ? [...patch.grammarPoints]
+        : unit.grammarPoints,
+    sessions:
+      selected.has("sessions") && patch.sessions !== null
+        ? patch.sessions.slice(0, MAX_UNIT_SESSIONS).map((session, index) => ({
+            ...session,
+            id: unit.sessions[index]?.id ?? createId("session"),
+          }))
+        : unit.sessions,
+    decisions: [
+      ...unit.decisions,
+      {
+        id: createId("decision"),
+        kind: "choice",
+        text: `Accepted Unit Architect proposal: ${proposal.title} (${sections.join(", ")}).`,
+        active: true,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+    updatedAt: timestamp,
+  };
+}
+
+export function mergeAgentVocabulary(
+  unit: UnitContent,
+  vocabulary: VocabularyItem[],
+  drafts: UnitAgentVocabularyDraft[],
+  imageSelections: Record<number, string>,
+  timestamp = new Date().toISOString(),
+): { unit: UnitContent; vocabulary: VocabularyItem[] } {
+  let nextVocabulary = [...vocabulary];
+  let links = [...unit.vocabulary];
+
+  drafts.forEach((draft, index) => {
+    const normalized = normalizeVocabularyTerm(draft.term);
+    if (!normalized) return;
+
+    const existingIndex = nextVocabulary.findIndex(
+      (item) => normalizeVocabularyTerm(item.term) === normalized,
+    );
+    const selectedImage = imageSelections[index] ?? "";
+
+    if (existingIndex >= 0) {
+      const existing = nextVocabulary[existingIndex];
+      if (!links.some((link) => link.vocabularyId === existing.id)) {
+        links = [...links, { vocabularyId: existing.id, purpose: "new" }];
+      }
+      if (selectedImage && !existing.imageUrl) {
+        nextVocabulary[existingIndex] = {
+          ...existing,
+          imageUrl: selectedImage,
+          updatedAt: timestamp,
+        };
+      }
+      return;
+    }
+
+    const vocabularyId = createId("vocab");
+    nextVocabulary = [
+      ...nextVocabulary,
+      {
+        id: vocabularyId,
+        term: draft.term.trim(),
+        translationFr: draft.translationFr.trim(),
+        phonetic: draft.phonetic.trim(),
+        imageUrl: selectedImage,
+        audio: [],
+        tags: draft.tags.map((tag) => tag.trim()).filter(Boolean),
+        notes: draft.notes.trim(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ];
+    links = [...links, { vocabularyId, purpose: "new" }];
+  });
+
+  return {
+    unit: { ...unit, vocabulary: links, updatedAt: timestamp },
+    vocabulary: nextVocabulary,
+  };
+}
+
+export function mergeAgentMaterials(
+  unit: UnitContent,
+  drafts: UnitAgentMaterialDraft[],
+  imageSelections: Record<string, string>,
+  timestamp = new Date().toISOString(),
+): UnitContent {
+  const materials = [...(unit.materials ?? [])];
+  const existingTitles = new Set(
+    materials.map((material) => normalizeVocabularyTerm(material.title)),
+  );
+
+  drafts.forEach((draft, materialIndex) => {
+    const normalizedTitle = normalizeVocabularyTerm(draft.title);
+    if (!normalizedTitle || existingTitles.has(normalizedTitle)) return;
+    existingTitles.add(normalizedTitle);
+    materials.push({
+      id: createId("material"),
+      kind: draft.kind,
+      title: draft.title.trim(),
+      purpose: draft.purpose.trim(),
+      instructions: draft.instructions.trim(),
+      studentContent: draft.studentContent.trim(),
+      teacherNotes: draft.teacherNotes.trim(),
+      imageUrls: draft.imagePrompts
+        .map((_, imageIndex) => imageSelections[`material:${materialIndex}:${imageIndex}`])
+        .filter(Boolean),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+  });
+
+  return { ...unit, materials, updatedAt: timestamp };
 }
 
 export function normalizeVocabularyTerm(value: string): string {

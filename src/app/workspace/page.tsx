@@ -2,11 +2,15 @@ import type { Metadata } from "next";
 import { TeacherWorkspace } from "@/components/workspace/TeacherWorkspace";
 
 export const metadata: Metadata = {
-  title: "Teacher Workspace | The ESL Architect",
-  description: "Plan, version, adapt and distribute ESL units by class.",
+  title: "Mes séquences | Atelier de séquences",
+  description: "Planifier une séquence et produire un dossier coordonné pour la classe.",
 };
 
-export default function WorkspacePage() {
-  return <TeacherWorkspace />;
+export default async function WorkspacePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ driveMaterial?: string }>;
+}) {
+  const { driveMaterial } = await searchParams;
+  return <TeacherWorkspace initialTab={driveMaterial ? "materials" : "plan"} />;
 }
-

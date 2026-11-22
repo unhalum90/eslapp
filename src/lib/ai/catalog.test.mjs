@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   DEFAULT_TEXT_AGENT,
   IMAGE_AGENT,
+  IMAGE_AGENTS,
   normalizeTextAgent,
   parseOwnerEmails,
   TEXT_AGENTS,
@@ -23,6 +24,11 @@ test("the owner can select the configured production model IDs", () => {
 test("Nano Banana 2 remains the dedicated image model", () => {
   assert.equal(IMAGE_AGENT.model, "gemini-3.1-flash-image");
   assert.equal(IMAGE_AGENT.requiredEnvironmentVariable, "GOOGLE_API_KEY");
+});
+
+test("image generation offers the current Google and OpenAI models", () => {
+  assert.equal(IMAGE_AGENTS.gemini.model, "gemini-3.1-flash-image");
+  assert.equal(IMAGE_AGENTS.openai.model, "gpt-image-2");
 });
 
 test("owner email parsing is normalized and ignores empty entries", () => {

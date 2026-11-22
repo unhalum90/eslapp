@@ -153,7 +153,7 @@ export function DecisionHistoryPanel({ unit }: { unit: UnitContent }) {
           ))}
           {unitRevisions.length === 0 && (
             <p className="rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-500">
-              No saved versions yet. Use “Save version” in the Plan tab before a major change.
+              No saved snapshots yet. Use “Save snapshot” in the Plan tab before a major change.
             </p>
           )}
         </div>
@@ -161,4 +161,3 @@ export function DecisionHistoryPanel({ unit }: { unit: UnitContent }) {
     </div>
   );
 }
-

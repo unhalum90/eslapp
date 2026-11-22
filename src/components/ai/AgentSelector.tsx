@@ -80,14 +80,14 @@ export function AgentSelector() {
         aria-label={status}
       />
       <div
-        className={`hidden items-center gap-1 text-[10px] font-bold md:flex ${configuration?.imageAgent.configured ? "text-emerald-700" : "text-slate-400"}`}
+        className={`hidden items-center gap-1 text-[10px] font-bold md:flex ${configuration?.imageAgents && Object.values(configuration.imageAgents).some((agent) => agent.configured) ? "text-emerald-700" : "text-slate-400"}`}
         title={
-          configuration?.imageAgent.configured
-            ? "Nano Banana 2 image generation ready"
-            : "GOOGLE_API_KEY missing for Nano Banana 2"
+          configuration?.imageAgents
+            ? `${configuration.imageAgents.gemini.label}: ${configuration.imageAgents.gemini.configured ? "ready" : "key missing"}; ${configuration.imageAgents.openai.label}: ${configuration.imageAgents.openai.configured ? "ready" : "key missing"}`
+            : "Checking image generation configuration"
         }
       >
-        <ImageIcon size={12} /> NB2
+        <ImageIcon size={12} /> Images
       </div>
     </div>
   );

@@ -8,7 +8,18 @@ export interface AiIdentity {
   isOwner: boolean;
 }
 
+export function isAiAuthenticationRequired(): boolean {
+  return process.env.AI_REQUIRE_AUTH?.trim().toLowerCase() === "true";
+}
+
 export async function getAiIdentity(): Promise<AiIdentity | null> {
+  if (!isAiAuthenticationRequired()) {
+    return {
+      email: "private-teacher@local",
+      isOwner: true,
+    };
+  }
+
   const supabase = await createServerSupabaseClient();
   if (!supabase) return null;
 
